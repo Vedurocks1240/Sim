@@ -1,0 +1,121 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ahmedabad Flight</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Widgets/widgets.css">
+<style>
+html,body,#c{margin:0;height:100%;width:100%;overflow:hidden;background:#000;font:13px system-ui,sans-serif;color:#fff}
+.p{position:fixed;background:#0f1720ee;border:1px solid #2b3a4a;border-radius:12px;padding:14px}
+#menu{inset:0;margin:auto;width:340px;height:fit-content;z-index:9}
+#hud{left:12px;bottom:12px;font:13px ui-monospace,monospace;line-height:1.5;z-index:5;display:none;white-space:pre}
+#pair{right:12px;top:12px;width:170px;text-align:center;z-index:5;display:none}
+#msg{top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;font-size:20px;color:#f0a43a}
+select,input,button{width:100%;margin:4px 0 8px;padding:9px;border-radius:8px;border:1px solid #2b3a4a;background:#1c2836;color:#fff;font:inherit;box-sizing:border-box}
+button{background:#3b9cff;border:0;cursor:pointer;font-weight:600}
+small{color:#8aa0b5;line-height:1.4}a{color:#6cb6ff}.cesium-viewer-bottom{display:none}
+</style></head><body>
+<div id="c"></div>
+<div id="menu" class="p"><h3 style="margin:0 0 8px">✈ Fly over Ahmedabad</h3>
+<label>Aircraft</label><select id="ac"></select>
+<label>Cesium ion token <small>(free, for 3D terrain + buildings)</small></label>
+<input id="tok" placeholder="paste token (optional)" autocomplete="off">
+<label>Scenery</label><select id="sc"><option value="osm">OSM 3D buildings</option><option value="google">Google photorealistic 3D</option></select>
+<button id="go">Fly</button>
+<small>Get a token at <a href="https://ion.cesium.com/tokens" target="_blank">ion.cesium.com</a>. For Google 3D, add “Google Photorealistic 3D Tiles” to your assets first. Without a token you get flat map imagery and no buildings.</small></div>
+<div id="hud" class="p"></div><div id="pair" class="p"></div><div id="msg" class="p"></div>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Cesium.js"></script>
+<script src="peerjs.min.js"></script><script src="qrcode.js"></script>
+<script>
+const D=Math.PI/180,$=s=>document.querySelector(s);
+const MY=-Math.PI/2,PS=1,RS=1;           // model orientation fixes: flip PS/RS to -1 if pitch/roll look reversed
+// ---------- procedural aircraft meshes (flat-shaded glTF built at runtime) ----------
+function glb(parts,col){const P=[],N=[];
+ const tri=(a,b,c)=>{const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const l=Math.hypot(...n)||1;n=n.map(q=>q/l);[a,b,c].forEach(p=>{P.push(...p);N.push(...n)})};
+ for(const s of parts){const m=(u,v,h)=>s.k=='h'?[v,s.y+h,u]:[h,s.y+v,u],q=s.pts,n=q.length,cu=q.reduce((a,p)=>a+p[0],0)/n,cv=q.reduce((a,p)=>a+p[1],0)/n,t=s.t/2;
+  for(let i=0;i<n;i++){const a=q[i],b=q[(i+1)%n];
+   tri(m(cu,cv,t),m(a[0],a[1],t),m(b[0],b[1],t));tri(m(cu,cv,-t),m(b[0],b[1],-t),m(a[0],a[1],-t));
+   tri(m(a[0],a[1],t),m(a[0],a[1],-t),m(b[0],b[1],t));tri(m(b[0],b[1],t),m(a[0],a[1],-t),m(b[0],b[1],-t));}}
+ const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];for(let i=0;i<P.length;i++){mn[i%3]=Math.min(mn[i%3],P[i]);mx[i%3]=Math.max(mx[i%3],P[i])}
+ const f=new Float32Array([...P,...N]);let b='';new Uint8Array(f.buffer).forEach(x=>b+=String.fromCharCode(x));
+ const g={asset:{version:"2.0"},scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0}],meshes:[{primitives:[{attributes:{POSITION:0,NORMAL:1},material:0}]}],
+  materials:[{doubleSided:true,pbrMetallicRoughness:{baseColorFactor:col,metallicFactor:.3,roughnessFactor:.6}}],
+  buffers:[{byteLength:f.byteLength,uri:"data:application/octet-stream;base64,"+btoa(b)}],
+  bufferViews:[{buffer:0,byteOffset:0,byteLength:P.length*4,target:34962},{buffer:0,byteOffset:P.length*4,byteLength:N.length*4,target:34962}],
+  accessors:[{bufferView:0,componentType:5126,count:P.length/3,type:"VEC3",min:mn,max:mx},{bufferView:1,componentType:5126,count:N.length/3,type:"VEC3"}]};
+ return URL.createObjectURL(new Blob([JSON.stringify(g)],{type:"model/gltf+json"}))}
+const fus=(L,w)=>({k:'h',t:w*.9,y:0,pts:[[L/2,0],[L*.3,w/2],[-L/2,w*.4],[-L/2,-w*.4],[L*.3,-w/2]]});
+const wing=(zr,cr,s,sw,ct,y=0)=>({k:'h',t:.4,y,pts:[[zr,0],[zr-sw,s/2],[zr-sw-ct,s/2],[zr-cr,0],[zr-sw-ct,-s/2],[zr-sw,-s/2]]});
+const fin=(zr,cr,h,sw,ct,y)=>({k:'v',t:.4,y,pts:[[zr,0],[zr-sw,h],[zr-sw-ct,h],[zr-cr,0]]});
+// vmax/vs in m/s, rr/pr = roll/pitch rate deg/s, L = length m
+const AC={
+ x15:{n:"North American X-15",L:15,vmax:1500,vs:95,rr:150,pr:25,col:[.08,.08,.09,1],p:[fus(15,1.3),wing(-2,4.5,6.8,1.5,1.5),fin(-4,4,2.8,2,1.5,.6)]},
+ xb70:{n:"North American XB-70 Valkyrie",L:57,vmax:980,vs:85,rr:30,pr:10,col:[.92,.92,.9,1],p:[fus(57,2.6),wing(-4,28,32,24,4),wing(16,5,9,3,2,.2),fin(-22,10,6,6,3,1.2)]},
+ f19:{n:"F-19 Lightning (fictional stealth)",L:15,vmax:700,vs:62,rr:200,pr:30,col:[.25,.27,.3,1],p:[fus(15,1.6),wing(-1,9,11,6,2),fin(-5,3,2,1.5,1,.7)]},
+ rafale:{n:"Dassault Rafale",L:15.3,vmax:640,vs:58,rr:220,pr:32,col:[.55,.58,.62,1],p:[fus(15.3,1.9),wing(-1,7,10.9,4,1.6),wing(4,2,6,1.5,.8,.3),fin(-5,4,3,2.2,1.4,.8)]},
+ a320:{n:"Airbus A320",L:37.6,vmax:250,vs:65,rr:25,pr:8,col:[.95,.95,.97,1],p:[fus(37.6,4),wing(2,7,35.8,9,2),wing(-15,3,12.4,3,1.2),fin(-14,6,6,4,2,1.9)]},
+ a350:{n:"Airbus A350",L:66.8,vmax:260,vs:68,rr:20,pr:7,col:[.95,.95,.97,1],p:[fus(66.8,6),wing(4,11,64.8,16,3),wing(-26,5,20,5,2),fin(-25,9,9,5,3,2.8)]},
+ a380:{n:"Airbus A380",L:72.7,vmax:250,vs:72,rr:15,pr:6,col:[.95,.95,.97,1],p:[fus(72.7,7.5),wing(5,13,79.8,20,4),wing(-28,5,30,7,3),fin(-27,10,10,6,3,3.5)]},
+ f9:{n:"Falcon 9 (rocket, thrust-vectoring)",L:70,vmax:1800,vs:0,rocket:1,rr:40,pr:30,col:[.97,.97,.97,1],p:[fus(70,3.7),wing(-30,6,10,3,1.5)]}
+};
+for(const k in AC){const o=document.createElement("option");o.value=k;o.textContent=AC[k].n;$("#ac").appendChild(o)}
+$("#tok").value=localStorage.getItem("ion")||"";
+// ---------- state ----------
+let viewer,plane,A,gH=0,last=0,S={},ax={r:0,p:0,y:0},ph={r:0,p:0,y:0},phT=0,lastPT=-1;const keys={};
+function reset(){S={lon:72.57,lat:23.03,h:800,hdg:350,pitch:0,roll:0,spd:Math.max(A.vs*1.6,90),thr:.6,eng:1,gear:0,flaps:0,airbrake:0,brk:0,park:0,ap:0,trim:0,acc:0,part:0,ptt:0,cam:0,tH:350,tA:800,dead:0};}
+const T={gear:()=>S.gear^=1,parking:()=>S.park^=1,airbrake:()=>S.airbrake^=1,lowerFlaps:()=>S.flaps=Math.min(3,S.flaps+1),raiseFlaps:()=>S.flaps=Math.max(0,S.flaps-1),
+ cycleFlaps:()=>S.flaps=(S.flaps+1)%4,engine:()=>S.eng^=1,autopilot:()=>{S.ap^=1;S.tH=S.hdg;S.tA=S.h},trimUp:()=>S.trim=Math.min(1,S.trim+.05),
+ trimDown:()=>S.trim=Math.max(-1,S.trim-.05),trimNeutral:()=>S.trim=0,accessories:()=>S.acc^=1,animPart:()=>S.part^=1,cam:()=>S.cam^=1};
+function act(n,d){if(n=='brakes')S.brk=d?1:0;else if(n=='ptt')S.ptt=d?1:0;else if(d&&T[n])T[n]()}
+// GeoFS key bindings
+const KM={KeyG:'gear',Space:'brakes',Semicolon:'parking',KeyB:'airbrake',BracketLeft:'lowerFlaps',BracketRight:'raiseFlaps',KeyF:'cycleFlaps',KeyE:'engine',KeyA:'autopilot',Home:'trimUp',End:'trimDown',Delete:'trimNeutral',KeyZ:'accessories',KeyX:'animPart',KeyT:'ptt',KeyC:'cam'};
+addEventListener("keydown",e=>{keys[e.code]=1;if(KM[e.code]&&!e.repeat)act(KM[e.code],1);if(/Arrow|Space|Page|Home|End/.test(e.code)&&viewer)e.preventDefault()});
+addEventListener("keyup",e=>{keys[e.code]=0;if(KM[e.code])act(KM[e.code],0)});
+// ---------- flight model (arcade) ----------
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+function step(dt){if(S.dead)return;const a=A,onG=S.h<=gH+2.5,ph_=performance.now()-phT<600;
+ const k=(n,p)=>(keys[p]?1:0)-(keys[n]?1:0),tg={r:k('ArrowLeft','ArrowRight'),p:k('ArrowUp','ArrowDown'),y:k('Comma','Period')};
+ for(const i in ax)ax[i]+=(tg[i]-ax[i])*Math.min(1,dt*(tg[i]?4:6));
+ const I=ph_?ph:ax;
+ if(keys.PageUp||keys.Equal||keys.NumpadAdd)S.thr=Math.min(1,S.thr+.4*dt);
+ if(keys.PageDown||keys.Minus||keys.NumpadSubtract)S.thr=Math.max(0,S.thr-.4*dt);
+ if(S.ap){const dh=((S.tH-S.hdg+540)%360)-180;S.roll+=cl(cl(dh*1.5,-25,25)-S.roll,-30*dt,30*dt);S.pitch+=cl(cl((S.tA-S.h)*.04,-10,10)-S.pitch,-8*dt,8*dt)}
+ else{S.roll+=I.r*a.rr*dt;S.pitch+=(I.p*a.pr+S.trim)*dt}
+ if(a.rocket)S.roll=0;else{if(S.roll>180)S.roll-=360;if(S.roll<-180)S.roll+=360}
+ S.pitch=cl(S.pitch,-89,89);
+ const sp=Math.max(S.spd,10);
+ S.hdg+=a.rocket?I.r*35*dt:cl(Math.tan(cl(S.roll,-80,80)*D)*9.81/sp/D,-45,45)*dt;S.hdg+=I.y*15*dt;S.hdg=(S.hdg+360)%360;
+ const drag=1+(S.gear?.6:0)+S.flaps*.25+(S.airbrake?1.2:0),tgt=S.eng?S.thr*a.vmax:0;
+ S.spd+=(tgt/drag-S.spd)*.2*dt-9.81*Math.sin(S.pitch*D)*.6*dt;
+ if(onG)S.spd-=(S.brk?14:0)*dt+(S.park?40:0)*dt+1.5*dt;S.spd=Math.max(0,S.spd);
+ const vs=Math.max(1,a.vs-S.flaps*8);S.stall=!a.rocket&&!onG&&S.spd<vs;
+ if(S.stall){S.pitch-=22*dt*(1-S.spd/vs);S.h-=(vs-S.spd)*.5*dt}
+ if(onG&&!a.rocket&&S.spd<vs){S.pitch=Math.min(S.pitch,3);S.roll=0}
+ const pr=S.pitch*D,hr=S.hdg*D,c=Math.cos(pr),vz=S.spd*Math.sin(pr);
+ S.lat+=S.spd*c*Math.cos(hr)*dt/111320;S.lon+=S.spd*c*Math.sin(hr)*dt/(111320*Math.cos(S.lat*D));S.h+=(onG&&vz<0?0:vz)*dt;
+ if(S.h<=gH+1.5){if(vz<-12||(!S.gear&&!a.rocket&&S.spd>45&&vz<-1))return crash();S.h=gH+1.5}}
+function crash(){S.dead=1;const m=$("#msg");m.textContent="CRASHED — restarting…";m.style.display="block";setTimeout(()=>{reset();m.style.display="none"},2500)}
+// ---------- render ----------
+function draw(){const pos=Cesium.Cartesian3.fromDegrees(S.lon,S.lat,S.h),cam=viewer.camera;
+ plane.position=pos;plane.orientation=Cesium.Transforms.headingPitchRollQuaternion(pos,new Cesium.HeadingPitchRoll(S.hdg*D+MY,S.pitch*D*PS,S.roll*D*RS));
+ if(S.cam==0)cam.lookAt(pos,new Cesium.HeadingPitchRange(S.hdg*D,-.2,A.L*1.8+25));
+ else{cam.lookAtTransform(Cesium.Matrix4.IDENTITY);cam.setView({destination:Cesium.Cartesian3.fromDegrees(S.lon,S.lat,S.h+2),orientation:{heading:S.hdg*D,pitch:S.pitch*D,roll:-S.roll*D}})}
+ const gh=viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(S.lon,S.lat));if(gh!==undefined)gH=gh;
+ $("#hud").textContent=`${A.n}\nSPD ${(S.spd*1.944).toFixed(0)} kt   ALT ${((S.h-gH)*3.281).toFixed(0)} ft AGL\nHDG ${S.hdg.toFixed(0)}°   THR ${(S.thr*100).toFixed(0)}%   TRIM ${(S.trim*100).toFixed(0)}\n`+
+ [S.eng?'ENG':'ENG-OFF',S.gear?'GEAR':'',S.flaps?'FLAPS'+S.flaps:'',S.airbrake?'AIRBRAKE':'',S.brk?'BRAKE':'',S.park?'PARK':'',S.ap?'AP':'',S.acc?'ACC':'',S.part?'PART':'',S.ptt?'PTT':'',S.stall?'STALL':''].filter(Boolean).join(' ')}
+function frame(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;step(dt);draw();requestAnimationFrame(frame)}
+// ---------- phone pairing (same protocol as the extension) ----------
+function onPhone(m){if(m.t=='axes'){ph={r:m.roll,p:m.pitch,y:m.yaw};phT=performance.now();if(typeof m.throttle=='number'&&Math.abs(m.throttle-lastPT)>.001){S.thr=m.throttle;lastPT=m.throttle}}
+ else if(m.t=='btn')act(m.name,1);else if(m.t=='key')act(m.name,m.down)}
+function pair(){const id="geofs-"+Math.random().toString(36).slice(2,8),p=new Peer(id);
+ p.on("open",()=>{const u=new URL("controller.html",location.href).href+"#"+id,q=qrcode(0,"M");q.addData(u);q.make();
+  const b=$("#pair");b.innerHTML='<b>📱 Phone</b><div style="background:#fff;padding:6px;border-radius:8px;line-height:0;margin:6px 0">'+q.createSvgTag({cellSize:3,scalable:true})+'</div><small>'+id+'</small>';b.querySelector("svg").style.width="100%";b.style.display="block"});
+ p.on("connection",c=>{c.on("data",onPhone);c.on("close",()=>phT=0)})}
+// ---------- start ----------
+$("#go").onclick=async()=>{A=AC[$("#ac").value];const tok=$("#tok").value.trim(),sc=$("#sc").value;localStorage.setItem("ion",tok);$("#menu").style.display="none";
+ const o={animation:false,timeline:false,baseLayerPicker:false,geocoder:false,homeButton:false,sceneModePicker:false,navigationHelpButton:false,fullscreenButton:false,infoBox:false,selectionIndicator:false};
+ if(tok){Cesium.Ion.defaultAccessToken=tok;o.terrain=Cesium.Terrain.fromWorldTerrain()}
+ else o.baseLayer=new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",maximumLevel:19}));
+ viewer=new Cesium.Viewer("c",o);viewer.scene.screenSpaceCameraController.enableInputs=false;viewer.scene.globe.depthTestAgainstTerrain=true;
+ if(tok)try{viewer.scene.primitives.add(sc=="google"?await Cesium.Cesium3DTileset.fromIonAssetId(2275207):await Cesium.createOsmBuildingsAsync())}
+ catch(e){const m=$("#msg");m.textContent="Buildings failed to load: check your ion token/assets";m.style.display="block";setTimeout(()=>m.style.display="none",5000)}
+ plane=viewer.entities.add({model:{uri:glb(A.p,A.col),minimumPixelSize:0,scale:1}});
+ reset();$("#hud").style.display="block";pair();requestAnimationFrame(frame)};
+</script></body></html>
