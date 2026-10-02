@@ -12,7 +12,6 @@ select,input,button{width:100%;margin:4px 0 8px;padding:9px;border-radius:8px;bo
 button{background:#3b9cff;border:0;cursor:pointer;font-weight:600}
 small{color:#8aa0b5;line-height:1.4}a{color:#6cb6ff}.cesium-viewer-bottom{display:none}
 .touch #ins{bottom:auto;top:16px;width:min(58vw,780px);height:auto}.touch #hud,.touch #pair{display:none!important}
-#tf{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:7;background:transparent}
 #pair.big{inset:0;margin:auto;width:320px;height:fit-content;right:auto;top:auto;z-index:8}#pair.chip{width:auto;padding:4px 10px}
 #pair .qr{background:#fff;padding:8px;border-radius:8px;line-height:0;margin:8px 0}#pair .qr svg{width:100%}#pair .code{font:13px ui-monospace,monospace;color:#9fb3c8}
 </style></head><body>
@@ -27,7 +26,7 @@ small{color:#8aa0b5;line-height:1.4}a{color:#6cb6ff}.cesium-viewer-bottom{displa
 <small>Get a token at <a href="https://ion.cesium.com/tokens" target="_blank">ion.cesium.com</a>. For Google 3D, add “Google Photorealistic 3D Tiles” to your assets first. Without a token you get flat map imagery and no buildings.</small></div>
 <div id="hud" class="p"></div><canvas id="ins" width="780" height="178"></canvas><div id="pair" class="p"></div><div id="msg" class="p"></div>
 <script src="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Cesium.js"></script>
-<script src="peerjs.min.js"></script><script src="qrcode.js"></script>
+<script src="peerjs.min.js"></script><script src="qrcode.js"></script><script src="controls.js"></script>
 <script>
 const D=Math.PI/180,$=s=>document.querySelector(s);
 const MY=-Math.PI/2,PS=1,RS=1;           // model orientation fixes: flip PS/RS to -1 if pitch/roll look reversed
@@ -162,11 +161,7 @@ function pair(){const id="geofs-"+Math.random().toString(36).slice(2,8),p=new Pe
  p.on("connection",c=>{if(ctl)ctl.close();ctl=c;const up=()=>{waitCtl=false;showPair('ok')};c.open?up():c.on("open",up);
   c.on("data",onPhone);c.on("close",()=>{phT=0;if(ctl===c){if(big)waitCtl=true;showPair('lost')}})})}
 // ---------- on-device mode: the controller page runs as a transparent overlay on this same screen ----------
-function startTouch(){document.body.classList.add("touch");viewer.resolutionScale=.75;viewer.scene.globe.maximumScreenSpaceError=4;
- const f=document.createElement("iframe");f.id="tf";f.src="controller.html#local";f.allow="accelerometer; gyroscope; fullscreen";f.setAttribute("allowtransparency","true");document.body.appendChild(f)}
-addEventListener("message",e=>{const m=e.data&&e.data.gpc;if(!m)return;
- if(m.t=="fs"){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen({navigationUI:"hide"}).then(()=>screen.orientation.lock("landscape")).catch(()=>{}).catch(()=>{})}
- else onPhone(m)});
+function startTouch(){document.body.classList.add("touch");viewer.resolutionScale=.75;viewer.scene.globe.maximumScreenSpaceError=4;GpcControls.mount({local:true,onMessage:onPhone})}
 // ---------- start ----------
 $("#go").onclick=async()=>{A=AC[$("#ac").value];const tok=$("#tok").value.trim(),sc=$("#sc").value;localStorage.setItem("ion",tok);$("#menu").style.display="none";const mode=$("#mode").value,touch=mode=="touch";big=mode=="remote";waitCtl=big;
  const o={animation:false,timeline:false,baseLayerPicker:false,geocoder:false,homeButton:false,sceneModePicker:false,navigationHelpButton:false,fullscreenButton:false,infoBox:false,selectionIndicator:false};
