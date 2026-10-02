@@ -11,6 +11,10 @@ html,body,#c{margin:0;height:100%;width:100%;overflow:hidden;background:#000;fon
 select,input,button{width:100%;margin:4px 0 8px;padding:9px;border-radius:8px;border:1px solid #2b3a4a;background:#1c2836;color:#fff;font:inherit;box-sizing:border-box}
 button{background:#3b9cff;border:0;cursor:pointer;font-weight:600}
 small{color:#8aa0b5;line-height:1.4}a{color:#6cb6ff}.cesium-viewer-bottom{display:none}
+.touch #ins{bottom:auto;top:16px;width:min(58vw,780px);height:auto}.touch #hud,.touch #pair{display:none!important}
+#tf{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:7;background:transparent}
+#pair.big{inset:0;margin:auto;width:320px;height:fit-content;right:auto;top:auto;z-index:8}#pair.chip{width:auto;padding:4px 10px}
+#pair .qr{background:#fff;padding:8px;border-radius:8px;line-height:0;margin:8px 0}#pair .qr svg{width:100%}#pair .code{font:13px ui-monospace,monospace;color:#9fb3c8}
 </style></head><body>
 <div id="c"></div>
 <div id="menu" class="p"><h3 style="margin:0 0 8px">✈ Fly over Ahmedabad</h3>
@@ -18,6 +22,7 @@ small{color:#8aa0b5;line-height:1.4}a{color:#6cb6ff}.cesium-viewer-bottom{displa
 <label>Cesium ion token <small>(free, for 3D terrain + buildings)</small></label>
 <input id="tok" placeholder="paste token (optional)" autocomplete="off">
 <label>Scenery</label><select id="sc"><option value="osm">OSM 3D buildings</option><option value="google">Google photorealistic 3D</option></select>
+<label>Controls</label><select id="mode"><option value="pair">Desktop keyboard (phone QR in corner)</option><option value="remote">Second phone as controller (pairing screen)</option><option value="touch">On-screen touch + gyro (play on this phone)</option></select>
 <button id="go">Fly</button>
 <small>Get a token at <a href="https://ion.cesium.com/tokens" target="_blank">ion.cesium.com</a>. For Google 3D, add “Google Photorealistic 3D Tiles” to your assets first. Without a token you get flat map imagery and no buildings.</small></div>
 <div id="hud" class="p"></div><canvas id="ins" width="780" height="178"></canvas><div id="pair" class="p"></div><div id="msg" class="p"></div>
@@ -57,7 +62,7 @@ const AC={
  f9:{n:"Falcon 9 (rocket, thrust-vectoring)",L:70,m:45000,fu:25000,sf:3.6e-4,S:10.7,T:850000,cd0:.4,k:0,cl:0,g:1,rr:40,gh:2,vn:3500,rocket:1,f:{part:"Grid fins"},col:[.97,.97,.97,1],p:[fus(70,3.7),wing(-30,6,10,3,1.5)]}
 };
 for(const k in AC){const o=document.createElement("option");o.value=k;o.textContent=AC[k].n;$("#ac").appendChild(o)}
-$("#tok").value=localStorage.getItem("ion")||"";
+$("#tok").value=localStorage.getItem("ion")||"";if(matchMedia("(pointer:coarse)").matches)$("#mode").value="touch";
 // ---------- state ----------
 let viewer,plane,A,gH=0,last=0,S={},ax={r:0,p:0,y:0},ph={r:0,p:0,y:0},phT=0,lastPT=-1;const keys={};
 function reset(){const r=!!A.rocket,g=r?80:0,sp=r?100:Math.sqrt(2*A.m*9.81/(1.1*A.S*.5)),
@@ -75,7 +80,7 @@ addEventListener("keyup",e=>{keys[e.code]=0;if(KM[e.code])act(KM[e.code],0)});
 // ---------- flight model: ISA atmosphere, lift/drag polar, stall, thrust lapse, wave drag, g-limit, ground roll ----------
 const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
 const ISA=h=>{h=Math.max(0,h);const t=h<11000?288.15-.0065*h:216.65;return{rho:h<11000?1.225*Math.pow(1-2.2558e-5*h,4.2559):.3639*Math.exp(-(h-11000)/6342),a:Math.sqrt(1.4*287*t)}};
-function step(dt){if(S.dead)return;const a=A,f=a.f,m=a.m-(a.fu-S.fuel),W=m*9.81,ph_=performance.now()-phT<600;
+function step(dt){if(S.dead||waitCtl)return;const a=A,f=a.f,m=a.m-(a.fu-S.fuel),W=m*9.81,ph_=performance.now()-phT<600;
  const k=(n,p)=>(keys[p]?1:0)-(keys[n]?1:0),tg={r:k('ArrowLeft','ArrowRight'),p:k('ArrowUp','ArrowDown'),y:k('Comma','Period')};
  for(const i in ax)ax[i]+=(tg[i]-ax[i])*Math.min(1,dt*(tg[i]?4:6));
  const I=ph_?ph:ax;S.noz=a.stovl?S.noz+cl((S.acc?90:0)-S.noz,-25*dt,25*dt):0;if(S.fuel<=0)S.eng=0;
@@ -142,14 +147,28 @@ function inst(){const vk=S.spd*1.944,Mc=S.spd/ISA(S.h).a,al=S.h*3.281,vs=S.spd*M
 function hud(){const f=A.f;$("#hud").textContent=A.n+"\n"+[S.eng?'ENG':'ENG-OFF',S.gear?(A.rocket?'LEGS':'GEAR'):'',S.flaps?'FLAPS'+S.flaps:'',S.airbrake?'AIRBRAKE':'',S.brk?'BRAKE':'',S.park?'PARK':'',S.ap?'AP':'',S.acc?f.acc:'',S.part?f.part:'',S.ptt?'PTT':'',S.stall?'STALL':''].filter(Boolean).join(' · ')+`\nB ${f.air?'airbrake':'—'} · Z ${f.acc||'—'} · X ${f.part||'—'}${A.stovl?' · NOZ '+Math.round(S.noz)+'°':''}${S.eng?'':' · NO FUEL/ENG'}`;inst()}
 function frame(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;step(dt);draw();requestAnimationFrame(frame)}
 // ---------- phone pairing (same protocol as the extension) ----------
-function onPhone(m){if(!onPhone.c){onPhone.c=1;const b=$("#pair");b.style.width="auto";b.innerHTML="📱 ●"}if(m.t=='axes'){ph={r:m.roll,p:m.pitch,y:m.yaw};phT=performance.now();if(typeof m.throttle=='number'&&Math.abs(m.throttle-lastPT)>.001){S.thr=m.throttle;lastPT=m.throttle}}
+function onPhone(m){if(m.t=='axes'){ph={r:m.roll,p:m.pitch,y:m.yaw};phT=performance.now();if(typeof m.throttle=='number'&&Math.abs(m.throttle-lastPT)>.001){S.thr=m.throttle;lastPT=m.throttle}}
  else if(m.t=='btn')act(m.name,1);else if(m.t=='key')act(m.name,m.down)}
+let big=false,ctl=null,pinfo={},waitCtl=false;   // big = dedicated "second phone" mode; waitCtl = sim paused until a controller connects
+function showPair(st){const b=$("#pair");
+ if(st=='ok'){b.className="p chip";b.innerHTML="📱 ●";b.style.display="block";return}
+ b.className="p"+(big?" big":"");
+ b.innerHTML=`<b>${st=='lost'?'Controller disconnected':'Connect a controller phone'}</b><div class="qr">${pinfo.svg}</div><div class="code">${pinfo.id}</div>`+
+ (big?`<small>1. On the controller phone, scan the QR (or open<br><b>${pinfo.base}</b><br>and type the code).<br>2. When it says connected, the flight starts.</small><br><button id="nc" style="margin-top:10px">Fly without a controller</button>`:'');
+ b.style.display="block";if(big)$("#nc").onclick=()=>{waitCtl=false;showPair('ok')}}
 function pair(){const id="geofs-"+Math.random().toString(36).slice(2,8),p=new Peer(id);
- p.on("open",()=>{const u=new URL("controller.html",location.href).href+"#"+id,q=qrcode(0,"M");q.addData(u);q.make();
-  const b=$("#pair");b.innerHTML='<b>📱 Phone</b><div style="background:#fff;padding:6px;border-radius:8px;line-height:0;margin:6px 0">'+q.createSvgTag({cellSize:3,scalable:true})+'</div><small>'+id+'</small>';b.querySelector("svg").style.width="100%";b.style.display="block"});
- p.on("connection",c=>{c.on("data",onPhone);c.on("close",()=>phT=0)})}
+ p.on("open",()=>{const base=new URL("controller.html",location.href).href,q=qrcode(0,"M");q.addData(base+"#"+id);q.make();pinfo={id,base,svg:q.createSvgTag({cellSize:3,scalable:true})};showPair('wait')});
+ p.on("error",e=>$("#pair").insertAdjacentHTML("beforeend","<br><small>Pairing error: "+e.type+"</small>"));
+ p.on("connection",c=>{if(ctl)ctl.close();ctl=c;const up=()=>{waitCtl=false;showPair('ok')};c.open?up():c.on("open",up);
+  c.on("data",onPhone);c.on("close",()=>{phT=0;if(ctl===c){if(big)waitCtl=true;showPair('lost')}})})}
+// ---------- on-device mode: the controller page runs as a transparent overlay on this same screen ----------
+function startTouch(){document.body.classList.add("touch");viewer.resolutionScale=.75;viewer.scene.globe.maximumScreenSpaceError=4;
+ const f=document.createElement("iframe");f.id="tf";f.src="controller.html#local";f.allow="accelerometer; gyroscope; fullscreen";f.setAttribute("allowtransparency","true");document.body.appendChild(f)}
+addEventListener("message",e=>{const m=e.data&&e.data.gpc;if(!m)return;
+ if(m.t=="fs"){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen({navigationUI:"hide"}).then(()=>screen.orientation.lock("landscape")).catch(()=>{}).catch(()=>{})}
+ else onPhone(m)});
 // ---------- start ----------
-$("#go").onclick=async()=>{A=AC[$("#ac").value];const tok=$("#tok").value.trim(),sc=$("#sc").value;localStorage.setItem("ion",tok);$("#menu").style.display="none";
+$("#go").onclick=async()=>{A=AC[$("#ac").value];const tok=$("#tok").value.trim(),sc=$("#sc").value;localStorage.setItem("ion",tok);$("#menu").style.display="none";const mode=$("#mode").value,touch=mode=="touch";big=mode=="remote";waitCtl=big;
  const o={animation:false,timeline:false,baseLayerPicker:false,geocoder:false,homeButton:false,sceneModePicker:false,navigationHelpButton:false,fullscreenButton:false,infoBox:false,selectionIndicator:false};
  if(tok){Cesium.Ion.defaultAccessToken=tok;o.terrain=Cesium.Terrain.fromWorldTerrain()}
  else o.baseLayer=new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",maximumLevel:19}));
@@ -157,5 +176,5 @@ $("#go").onclick=async()=>{A=AC[$("#ac").value];const tok=$("#tok").value.trim()
  if(tok)try{viewer.scene.primitives.add(sc=="google"?await Cesium.Cesium3DTileset.fromIonAssetId(2275207):await Cesium.createOsmBuildingsAsync())}
  catch(e){const m=$("#msg");m.textContent="Buildings failed to load: check your ion token/assets";m.style.display="block";setTimeout(()=>m.style.display="none",5000)}
  plane=viewer.entities.add({model:{uri:glb(A.p,A.col),minimumPixelSize:0,scale:1}});
- reset();$("#hud").style.display="block";$("#ins").style.display="block";pair();requestAnimationFrame(frame)};
+ reset();$("#hud").style.display="block";$("#ins").style.display="block";touch?startTouch():pair();requestAnimationFrame(frame)};
 </script></body></html>
