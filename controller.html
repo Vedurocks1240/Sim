@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
-<title>GeoFS Controller</title>
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="theme-color" content="#0b1118"><link rel="manifest" href="manifest.webmanifest"><title>GeoFS Controller</title>
 <style>
   :root{--bg:#0b1118;--panel:#141d27;--line:#2b3a4a;--fg:#e6edf3;--mut:#8aa0b5;--acc:#3b9cff;--ok:#3fb950;--warn:#f0a43a}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
   .ta{touch-action:none}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;overflow:hidden}
+  html,body{margin:0;height:100%;height:100dvh;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;overflow:hidden}
   #app{height:100%;display:grid;grid-template-columns:90px 1fr 1fr;gap:10px;padding:10px;
        padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;position:relative}
@@ -49,7 +49,7 @@
 </head>
 <body>
 <div id="top">not connected</div>
-<div id="corner"><button id="bHelp">?</button><button id="bSet">⚙</button></div>
+<div id="corner"><button id="bFull">⛶</button><button id="bHelp">?</button><button id="bSet">⚙</button></div>
 
 <!-- CONNECT / HELP SHEET -->
 <div id="help" class="sheet">
@@ -186,6 +186,15 @@ connect(parseCode(location.hash));
 async function keepAwake(){ try{ await navigator.wakeLock.request("screen"); }catch(e){} }
 const send = m => { if(conn && conn.open) conn.send(m); };
 
+// ---------- fullscreen ----------
+const isFull=()=>document.fullscreenElement||document.webkitFullscreenElement;
+async function goFull(auto){const e=document.documentElement;
+ try{ if(isFull()){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}
+  await (e.requestFullscreen||e.webkitRequestFullscreen).call(e,{navigationUI:"hide"});
+  try{await screen.orientation.lock("landscape")}catch(_){}
+ }catch(_){ if(!auto) setMsg("Fullscreen isn't available in this browser. On iPhone: Share → Add to Home Screen, then open the controller from that icon for full screen."); }}
+$("#bFull").onclick=()=>goFull(false);
+addEventListener("pointerdown",()=>goFull(true),{once:true});   // browsers need a tap before allowing fullscreen
 // ---------- sheets ----------
 $("#bHelp").onclick = () => $("#help").classList.remove("hidden");
 $("#closeHelp").onclick = () => $("#help").classList.add("hidden");
